@@ -1,0 +1,2 @@
+allele_count	ID
+1	NA20589

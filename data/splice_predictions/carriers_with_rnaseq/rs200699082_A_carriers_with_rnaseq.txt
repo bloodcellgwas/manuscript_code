@@ -1,0 +1,3 @@
+allele_count	ID
+1	NA12272
+1	NA20790

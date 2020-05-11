@@ -1,0 +1,3 @@
+allele_count	ID
+1	HG00121
+2	NA12874

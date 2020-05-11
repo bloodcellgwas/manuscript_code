@@ -1,0 +1,3 @@
+allele_count	ID
+1	HG00099
+1	HG00232

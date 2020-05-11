@@ -1,0 +1,4 @@
+allele_count	ID
+1	HG00355
+1	NA12044
+1	NA12286
