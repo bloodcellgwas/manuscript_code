@@ -1,0 +1,196 @@
+#################################################################################################################
+##### EasyQC-script to perform study-level and meta-level QC on imputed 1000G data
+##### EasyQC version: 9.0
+##### Programmer: Thomas Winkler, 2014-09-22
+##### Contact: thomas.winkler@klinik.uni-regensburg.de
+#################################################################################################################
+
+### Please DEFINE here format and input columns of the following EASYIN files
+DEFINE	--pathOut /nas/depts/006/langlab/shared/Data/BCX/EasyQC/output/HRC
+		--strMissing .
+		--strSeparator TAB
+		--acolIn SNP;CHR;POS;STRAND;EFFECT_ALLELE;OTHER_ALLELE;N;EAF;BETA;SE;PVAL;Rsq
+		--acolInClasses character;character;integer;character;character;character;numeric;numeric;numeric;numeric;numeric;numeric
+		--acolNewName SNP;CHR;POS;STRAND;OTHER_ALLELE;EFFECT_ALLELE;N;EAF;BETA;SE;PVAL;IMPUTATION
+
+## Please DO NOT CHANGE --acolNewName values because these reflect the column names used throughout the script
+## If the study used different column names, please amend the respective value at --acolIn, the column will then 
+## be automatically renamed to the respective --acolNewName value
+
+### Please DEFINE here all input files:
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_WBC_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_RBC_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_PLT_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_NEU_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_MON_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_MCV_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_MCHC_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_MCH_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_LYM_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_HGB_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_HCT_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_EOS_EA_270217_LPL.txt.gz
+EASYIN	--fileIn /nas/depts/006/langlab/shared/Data/BCX/EasyQC/FINCAVAS_BAS_EA_270217_LPL.txt.gz
+
+#################################################################################################################
+## EASYQC Scripting interface:
+START EASYQC
+
+####################
+## 1. Sanity checks: 
+
+CLEAN --rcdClean is.na(EFFECT_ALLELE)&is.na(OTHER_ALLELE) --strCleanName numDrop_Missing_Alleles
+CLEAN --rcdClean is.na(PVAL) --strCleanName numDrop_Missing_P
+CLEAN --rcdClean is.na(BETA) --strCleanName numDrop_Missing_BETA
+CLEAN --rcdClean is.na(SE) --strCleanName numDrop_Missing_SE
+CLEAN --rcdClean is.na(EAF) --strCleanName numDrop_Missing_EAF
+CLEAN --rcdClean is.na(N) --strCleanName numDrop_Missing_N
+CLEAN --rcdClean is.na(IMPUTATION) --strCleanName numDrop_Missing_Imputation
+
+CLEAN --rcdClean PVAL<0|PVAL>1 --strCleanName numDrop_invalid_PVAL
+CLEAN --rcdClean SE<=0|SE==Inf|SE>=100 --strCleanName numDrop_invalid_SE
+CLEAN --rcdClean abs(BETA)>=100 --strCleanName numDrop_invalid_BETA
+CLEAN --rcdClean EAF<0|EAF>1 --strCleanName numDrop_invalid_EAF
+CLEAN --rcdClean IMPUTATION<0 --strCleanName numDrop_invalid_IMPUTATION
+
+## This is important for data reduction, because some studies report an unnecessary large number of significant digits
+EDITCOL --rcdEditCol 1-signif(EAF,8) --colEdit EAF
+EDITCOL --rcdEditCol signif(BETA,8) --colEdit BETA
+EDITCOL --rcdEditCol signif(SE,8) --colEdit SE
+EDITCOL --rcdEditCol signif(PVAL,8) --colEdit PVAL
+
+####################
+## 2. Prepare files for filtering and apply minimum thresholds: 
+
+## Exclude monomorphic SNPs:
+CLEAN --rcdClean (EAF==0)|(EAF==1) --strCleanName numDrop_Monomorph
+
+## Create column with minor allele count:
+ADDCOL --rcdAddCol signif(2*pmin(EAF,1-EAF)*N,4) --colOut MAC
+
+## If you do not want to apply filters at this stage, please comment out the following rows or amend the 
+## filter thresholds according to your needs. 
+CLEAN --rcdClean N<30 --strCleanName numDrop_Nlt30
+#CLEAN --rcdClean MAC<=6 --strCleanName numDrop_MAClet6
+CLEAN --rcdClean (!is.na(IMPUTATION))&IMPUTATION<0.3 --strCleanName numDrop_lowImpQual
+
+####################
+#### 3. Harmonization of allele coding (I/D)
+## The aim of this step is to compile uniform allele codes A/C/G/T or I/D from different versions of given alleles
+
+HARMONIZEALLELES 	--colInA1 EFFECT_ALLELE 
+			--colInA2 OTHER_ALLELE
+	
+####################
+## 4. Harmonization of marker names (compile 'cptid')
+
+CREATECPTID --fileMap /nas/depts/006/langlab/shared/Data/BCX/EasyQC/rsmid_phase3_map.txt.gz
+			--colMapMarker rsmid
+			--colMapChr chr
+			--colMapPos pos
+			--colInMarker SNP
+			--colInA1 EFFECT_ALLELE
+			--colInA2 OTHER_ALLELE
+			--colInChr CHR
+			--colInPos POS
+			
+## TO DO: 	Define the path to the reference file 'rsmid_map.1000G_ALL_p1v3.merged_mach_impute.v1.txt.gz' at --fileMap.		
+## 			The mapping file can be found on our website www.genepi-regensburg.de/easyqc.
+## 			In case CHR or POS are not given in the input files, please remove "--colInChr CHR" and "--colInPos POS" from the 
+## 			command and remove "CHR;POS;" from --acolIn and --acolNewName as well as the respective "character;integer;"
+## 			from --acolInClasses 
+
+####################
+## 5.Filter duplicate SNPs
+## This will count duplicates and throw out the SNP with the lower sample size:
+
+CLEANDUPLICATES --colInMarker cptid 
+		--strMode samplesize 
+		--colN N
+				
+## The duplicates are written to the output in a separate file "*duplicates.txt"
+
+####################
+## 6. AF Checks
+
+### TO DO: 	Define the path to the reference file 'allelefreq.1000G_[ANCESTRY]_p1v3.impute_legends.noMono.noDup.noX.v2.gz' at --fileRef:
+### 		Please use the reference file ancestry that matches the ancestry of the study
+
+
+MERGE 	--colInMarker cptid
+	--fileRef /nas/depts/006/langlab/shared/Data/BCX/EasyQC/HRC.r1-1.GRCh37.wgs.mac5.sites.tab.cptid.maf001.gz
+	--acolIn cptid;ref;alt;raf
+	--acolInClasses character;character;character;numeric
+	--strRefSuffix .ref
+	--colRefMarker cptid
+	--blnWriteNotInRef 1
+
+ADJUSTALLELES 	--colInA1 EFFECT_ALLELE 
+		--colInA2 OTHER_ALLELE 
+		--colInFreq EAF
+		--colInBeta BETA
+		--colRefA1 ref.ref
+		--colRefA2 alt.ref
+		--blnMetalUseStrand 1
+		--blnRemoveMismatch 1
+		--blnRemoveInvalid 1
+
+## All mismatches will be removed (e.g. A/T in input, A/C in reference)		
+				
+AFCHECK --colInFreq EAF
+		--colRefFreq raf.ref
+		--numLimOutlier 0.2
+		--blnPlotAll 0
+
+## blnPlotAll 0 causes that only outlying SNPs with |Freq-Freq.ref|>0.2 will be plotted (way less computational time)
+
+####################
+## 7. Rearrange columns and Write CLEANED output
+
+GETCOLS --acolOut cptid;SNP;STRAND;EFFECT_ALLELE;OTHER_ALLELE;EAF;IMPUTATION;BETA;SE;PVAL;N;MAC
+
+WRITE	--strPrefix CLEANED. 
+		--strMissing . 
+		--strMode gz
+
+####################
+## 8.  Plot Z versus P
+
+#PZPLOT	--colBeta BETA 
+#		--colSe SE 
+#		--colPval PVAL
+
+####################
+## 9.  QQ plot
+
+QQPLOT	--acolQQPlot PVAL
+		--numPvalOffset 0.05
+		--strMode subplot
+
+####################
+## 10. Summary Stats post-QC
+
+CALCULATE --rcdCalc max(N,na.rm=T) --strCalcName N_max
+GC	--colPval PVAL --blnSuppressCorrection 1
+
+#RPLOT	--rcdRPlotX N_max
+#		--rcdRPlotY Lambda.PVAL.GC
+#		--arcdAdd2Plot abline(h=1,col='orange');abline(h=1.1,col='red')
+#		--strAxes lim(0,NULL,0,NULL)
+#		--strPlotName GC-PLOT
+
+####################
+## 11. SE-N Plot - Trait transformation
+
+CALCULATE --rcdCalc median(SE,na.rm=T) --strCalcName SE_median
+CALCULATE --rcdCalc median(1/sqrt(2*EAF*(1-EAF)), na.rm=T) --strCalcName c_trait_transf
+
+RPLOT 	--rcdRPlotX sqrt(N_max)
+		--rcdRPlotY c_trait_transf/SE_median
+		--arcdAdd2Plot abline(0,1,col='orange')
+		--strAxes zeroequal
+		--strPlotName SEN-PLOT
+		
+STOP EASYQC
+#################################################################################################################
+#################################################################################################################
