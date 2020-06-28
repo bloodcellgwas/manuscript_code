@@ -1,0 +1,27 @@
+
+#### masterfile 
+
+root_dir=/lustre/scratch115/projects/ukbb500k_t151/final_fine_mapping
+cat ${root_dir}/final_finemap_overview_blocks.txt | while read -a phenotypes
+do 
+pheno=${phenotypes[0]}
+Nblocks=${phenotypes[2]}
+Nsamples=${phenotypes[3]}
+echo "z;bgen;bgi;dose;sample;incl;snp;config;cred;log;n_samples" > ${root_dir}/${pheno}/finemap_${pheno}/masterfile.txt
+for((j=1; j<=${Nblocks};++j))
+do
+chr=$(cut -d" " -f1 ${root_dir}/${pheno}/${pheno}_block_ranges/range_str_end_${pheno}_finemap_block_${j}.txt)
+echo "${pheno}_block${j}.z;/lustre/scratch115/projects/ukbiobank/FullRelease/Imputed/EGAD00010001474/ukb_imp_chr${chr}_v3.bgen;/lustre/scratch115/projects/ukbiobank/FullRelease/Imputed/EGAD00010001474/ukb_imp_chr${chr}_v3.bgen.bgi;baso_block${j}.dose;${root_dir}/ukbb_500k_final_newsex.sample;../baso.incl;baso_block${j}.snp;baso_block${j}.config;baso_block${j}.cred;baso_block${j}.log;${Nsamples}" >>  ${root_dir}/${pheno}/finemap_${pheno}/masterfile.txt
+done
+done
+
+### .incl file
+cd ${root_dir}
+for((i=14; i<=42; ++i))
+do
+pheno=$(head -1 ukbb_500k_final_newsex.sample | cut -d" " -f${i} | sed 's/_gwas_normalised//g')
+awk -v var=$i '{if($var!="NA") print $1}' ukbb_500k_final_newsex.sample > ${root_dir}/${pheno}/${pheno}.incl
+sed '1d' ${root_dir}/${pheno}/${pheno}.incl > ${root_dir}/${pheno}/${pheno}.incl.tmp
+sed '1d' ${root_dir}/${pheno}/${pheno}.incl.tmp > ${root_dir}/${pheno}/${pheno}.incl
+rm ${root_dir}/${pheno}/${pheno}.incl.tmp
+done
