@@ -1,0 +1,237 @@
+### generate input snp files: a list of snps to be used for computing the score, together with their weights and the effect allele
+# building the following scores 
+# different p-value thresholds all LD-pruned (p<1 [genome-wide], p<0.05, p<5e-04, p<5e-06, p<5e-08, fine-mapped vars per each trait weighted by pp, cond.ind vars, cond.ind vars + pp>0.5 vars)
+
+snp_list_dir=/lustre/scratch115/projects/ukbb500k_t151/risk_score/results_ukbb_final/snp_lists
+root_dir=/lustre/scratch115/projects/ukbb500k_t151/risk_score/results_ukbb_final
+input_dir=/lustre/scratch115/projects/ukbb500k_t151/risk_score
+gen_dir=/lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool
+sample_file=/lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples
+gwas_dir=/lustre/scratch115/projects/ukbb500k_t151/BOLT_analysis/output
+
+##################
+### LD pruning ###
+##################
+
+## create lists of LD pruned SNPs, with larger intervals and smaller threshold
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --set-missing-var-ids @:#_\$1_\$2 --indep-pairwise 10000 100 0.8 --out list_vars_LD_r2_0.8_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -q long -J 'GW_LD_plink[12,13]' -o ../log_files/LD_prune_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+
+# chr 2 and 11 separately due to duplicate ids problem
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/projects/ukbb500k_t151/risk_score/INTERVAL_chr${LSB_JOBINDEX}_ok --set-missing-var-ids @:#_\$1_\$2 --indep-pairwise 10000 100 0.8 --out list_vars_LD_r2_0.8_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -q long -J 'GW_LD_plink[11]' -o ../log_files/LD_prune_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+
+cat pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo 'fgrep -w -f list_vars_LD_r2_0.8_chr${LSB_JOBINDEX}.prune.in '${pheno}'/'${pheno}'_my.score.gw_maf_0.001_info_0.4 > '${pheno}'/'${pheno}'_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'LD_prune[1-22]' -o ../log_files/${pheno}_my.score_LD_chr%I.log -M 10000 -R'select[mem>10000] rusage[mem=10000]'
+done
+
+### create lists of SNPs with p-value thresholds then filter by the list of LD pruned vars 
+# filter for MAF and INFO 
+
+bsub -G team151 -Is -M 6000 -R'select[mem>6000] rusage[mem=6000]' -q yesterday -- bash
+tail -3 pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+mkdir ${pheno}
+cd ${pheno}
+awk '{if($7<=1-0.001 && $7>=0.001 && $8>=0.4) print $0 "\t" $2 ":" $3 "_" $5 "_" $6}' ${gwas_dir}/${pheno}_gwas_normalised_imputed_full_panel.out > ${pheno}_all_gw_maf_0.001_info_0.4.txt
+cut -f1,5,6,11 ${pheno}_all_gw_maf_0.001_info_0.4.txt > my.score.tmp 
+awk '{if($4<0) print $1" "$3" "(-1)*$4; else print $1" "$2" "$4}' my.score.tmp > ${pheno}_my.score.gw_maf_0.001_info_0.4
+rm my.score.tmp
+rm ${pheno}_all_gw_maf_0.001_info_0.4.txt
+echo "finished phenotype $pheno"
+cd ..
+done
+
+################################################
+#### remove any duplicates in the score file ###
+################################################
+
+cat pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+cd ${pheno}
+for((i=1; i<23; ++i))
+do
+awk '!seen[$1]++' ${pheno}_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${i} > ${pheno}_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${i}.tmp
+mv ${pheno}_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${i}.tmp ${pheno}_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${i}
+done
+cd ..
+done
+
+bsub -G interval_gwas -o log_files/rem_dupl.log -M 6000 -R'select[mem>6000] rusage[mem=6000]' -- sh ../to_run.sh
+
+
+##########################
+### compute risk score ###
+##########################
+
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${LSB_JOBINDEX} sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_gw_LDpruned_maf_0.001_info_0.4_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[1,3-10,12-22]' -o log_files/risk_score_${pheno}_gw_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+# chr 11 and 2 - there are still some duplicates left so run separately
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/projects/ukbb500k_t151/risk_score/INTERVAL_chr${LSB_JOBINDEX}_ok --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score.gw_LDpruned_maf_0.001_info_0.4_chr${LSB_JOBINDEX} sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_gw_LDpruned_maf_0.001_info_0.4_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[2,11]' -o log_files/risk_score_${pheno}_gw_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+done
+
+
+### CHECKING RUNS 
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo $pheno
+echo $(ls score_results/${pheno}/*condind_pp_gt*.profile | wc -l)
+done
+
+############################
+### RUN FOR CONDIND VARS ### 
+############################
+
+
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score_condind sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_condind_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[1,3-10,12-22]' -o log_files/risk_score_${pheno}_condind_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+# chr 11 and 2 - there are still some duplicates left so run separately
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/projects/ukbb500k_t151/risk_score/INTERVAL_chr${LSB_JOBINDEX}_ok --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score_condind sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_condind_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[2,11]' -o log_files/risk_score_${pheno}_condind_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+done
+
+
+###################################
+### RUN FOR CONDIND + PP GT 0.5 ### 
+###################################
+
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score_condind_pp_gt_0.5 sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_condind_pp_gt_0.5_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[1,3-10,12-22]' -o log_files/risk_score_${pheno}_condind_pp_gt_0.5_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+# chr 11 and 2 - there are still some duplicates left so run separately
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/projects/ukbb500k_t151/risk_score/INTERVAL_chr${LSB_JOBINDEX}_ok --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score_condind_pp_gt_0.5 sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_condind_pp_gt_0.5_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[2,11]' -o log_files/risk_score_${pheno}_condind_pp_gt_0.5_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+done
+
+
+#############################
+### RUN FOR P-VAL CUTOFFS ###
+#############################
+gwas_dir=/lustre/scratch115/projects/ukbb500k_t151/BOLT_analysis/output
+sed '1d' pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+cd ${pheno}
+awk '{if($7<=1-0.001 && $7>=0.001 && $8>=0.4) print $0 "\t" $2 ":" $3 "_" $5 "_" $6}' ${gwas_dir}/${pheno}_gwas_normalised_imputed_full_panel.out > ${pheno}_all_gw_maf_0.001_info_0.4.txt
+cd ..
+done
+
+
+cutoffs=( 0.05 5e-04 5e-06 5e-08 )
+for j in "${cutoffs[@]}"
+do
+sed '1d' snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+awk -v coff=$j '{if($16 < coff) print}' snp_lists/${pheno}/${pheno}_all_gw_maf_0.001_info_0.4.txt > snp_lists/${pheno}/${pheno}_tmp
+cut -f1,5,6,11 snp_lists/${pheno}/${pheno}_tmp > snp_lists/${pheno}/my.score.tmp
+awk '{if($4<0) print $1" "$3" "(-1)*$4; else print $1" "$2" "$4}' snp_lists/${pheno}/my.score.tmp > snp_lists/${pheno}/${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4
+#remove duplicates 
+awk '!seen[$1]++' snp_lists/${pheno}/${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4 > snp_lists/${pheno}/${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4.tmp
+mv snp_lists/${pheno}/${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4.tmp snp_lists/${pheno}/${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4
+rm snp_lists/${pheno}/my.score.tmp
+rm snp_lists/${pheno}/${pheno}_tmp
+echo "finished phenotype $pheno"
+done
+echo "finished cutoff $j"
+done
+
+### LD filter here
+cd snp_lists
+
+cutoffs=( 0.05 5e-04 5e-06 5e-08 )
+for j in "${cutoffs[@]}"
+do
+sed '1d' pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo 'fgrep -w -f LD_pruning_lists/list_vars_LD_r2_0.8_chr${LSB_JOBINDEX}.prune.in '${pheno}'/'${pheno}'_my.score.pval_lt_'${j}'_maf_0.001_info_0.4 > '${pheno}'/'${pheno}'_my.score.pval_lt_'${j}'_maf_0.001_info_0.4_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'LD_prune[1-22]' -o ../log_files/${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4_LD_chr%I.log -M 10000 -R'select[mem>10000] rusage[mem=10000]'
+done 
+done
+
+# remove duplicates
+cutoffs=( 0.05 5e-04 5e-06 5e-08 )
+cat pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+cd ${pheno}
+for((i=1; i<23; ++i))
+do
+for j in "${cutoffs[@]}"
+do
+awk '!seen[$1]++' ${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4_chr${i} > ${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4_chr${i}.tmp
+mv ${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4_chr${i}.tmp ${pheno}_my.score.pval_lt_${j}_maf_0.001_info_0.4_chr${i}
+done
+done
+cd ..
+done
+
+
+# run score
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+cutoffs=( 0.05 5e-04 5e-06 5e-08 )
+for j in "${cutoffs[@]}"
+do
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score.pval_lt_'${j}'_maf_0.001_info_0.4_chr${LSB_JOBINDEX} sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_pval_lt_'${j}'_maf_0.001_info_0.4_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[6]' -o log_files/risk_score_${pheno}_pval_lt_${j}_maf_0.001_info_0.4_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/projects/ukbb500k_t151/risk_score/INTERVAL_chr${LSB_JOBINDEX}_ok --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score.pval_lt_'${j}'_maf_0.001_info_0.4_chr${LSB_JOBINDEX} sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_pval_lt_'${j}'_maf_0.001_info_0.4_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[2,11]' -o log_files/risk_score_${pheno}_pval_lt_${j}_maf_0.001_info_0.4_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+done
+done
+
+
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo $pheno
+echo $(ls score_results/${pheno}/*pval*.profile | wc -l)
+done
+
+cat pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+mv ${pheno}_my.score_condind_common ${pheno}
+done
+
+
+##############################
+### Run for condind common ###
+##############################
+# remove any duplicates 
+cat pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+cd ${pheno}
+awk '!seen[$1]++' ${pheno}_my.score_condind_common > ${pheno}_my.score_condind_common.tmp
+mv ${pheno}_my.score_condind_common.tmp ${pheno}_my.score_condind_common
+cd ..
+done
+
+
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score_condind_common sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_condind_common_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[5]' -o log_files/risk_score_${pheno}_condind_common_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+# chr 11 and 2 - there are still some duplicates left so run separately
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/projects/ukbb500k_t151/risk_score/INTERVAL_chr${LSB_JOBINDEX}_ok --exclude /lustre/scratch115/projects/ukbb500k_t151/risk_score/INT_exclude_dups_chr${LSB_JOBINDEX}.txt --set-missing-var-ids @:#_\$1_\$2 --score snp_lists/'${pheno}'/'${pheno}'_my.score_condind_common sum double-dosage --out score_results/'${pheno}'/'${pheno}'_INT_condind_common_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -J 'plink[2,11]' -o log_files/risk_score_${pheno}_condind_common_plink_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+done
+
+# check output
+cat snp_lists/pheno_list.txt | while read -a line
+do
+pheno=${line[0]}
+echo $pheno
+echo $(ls score_results/${pheno}/*condind_common*.profile | wc -l)
+done
+

@@ -1,0 +1,193 @@
+#DIR=
+/lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/clin_annot
+
+mend=read.table("ST7.txt",he=T, strings=F)
+tss=read.table("TSS.Ensemble_genes_downloaded_28_10_2019.txt", he=T, strings=F,sep="\t")
+tss=tss[!duplicated(tss$HGNC.symbol),]
+mend=merge(mend, tss, by.x="Gene_Symbol_HGNC", by.y="HGNC.symbol")
+mend$start=mend$Gene.start..bp.-100000
+mend$end=mend$Gene.end..bp.+100000
+pheno_list=scan("../results_ukbb_final/snp_lists/pheno_list.txt","char")
+
+
+for(i in c(2:29)){
+pheno=pheno_list[i]
+res=read.table(pipe(paste("awk \'{if($7>0.0005 && $7<(1-0.0005) && $8>0.4) print $2\" \"$3\" \"$16}\' ../../BOLT_analysis/output/",pheno,"_gwas_normalised_imputed_full_panel.out",sep="")), he=F, strings=F)
+ 
+set.seed(123)
+one=which(res$V3<0.05)
+two=sample(which(res$V3>0.05), 5000)
+good=c(one,two)
+res=res[good,]
+
+p.vals=res$V3[order(res$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+jpeg(paste("QQplot_with_mend_genes_enrichment_",pheno,".jpeg",sep=""))
+plot(-log10(ppoi), -log10(p.vals), xlab="Expected",ylab="Observed", pch=19, main=paste("QQ plot",pheno))
+
+### BPD
+tmp=mend[which(mend$Platform=="SMD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="blue", pch=19)
+
+### BPD
+tmp=mend[which(mend$Platform=="BPD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="violet", pch=19)
+
+
+### BMF
+tmp=mend[which(mend$Platform=="BMF"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="orange", pch=19)
+
+legend("topleft", c("SMD", "BPD", "BMF"), col=c("blue","violet","orange"), pch=19)
+
+dev.off()
+}
+
+
+# OTHER PHENOTYPES
+
+mend=read.table("ST7.txt",he=T, strings=F)
+tss=read.table("TSS.Ensemble_genes_downloaded_28_10_2019.txt", he=T, strings=F,sep="\t")
+tss=tss[!duplicated(tss$HGNC.symbol),]
+mend=merge(mend, tss, by.x="Gene_Symbol_HGNC", by.y="HGNC.symbol")
+mend$start=mend$Gene.start..bp.-100000
+mend$end=mend$Gene.end..bp.+100000
+
+filez=system("ls Other_GWAS_traits_for_Mendelian_enrichment",intern=T)
+pheno_list=sapply(filez, function(x){unlist(strsplit(x,"\\."))[1]})
+
+for(i in 1:9){
+pheno=pheno_list[i]
+res=read.table(pipe(paste("awk \'{if($3>0.0005) print $1\" \"$12}\' Other_GWAS_traits_for_Mendelian_enrichment/",filez[i],sep="")), he=F, strings=F)
+
+if(dim(res)[2]==1)
+res=read.table(pipe(paste("awk \'{if($3>0.0005) print $1\" \"$11}\' Other_GWAS_traits_for_Mendelian_enrichment/",filez[i],sep="")), he=F, strings=F)
+
+res=res[-1,]
+set.seed(123)
+res$V2=as.numeric(res$V2)
+res=res[which(!is.na(res$V2)),]
+one=which(res$V2<0.05)
+two=sample(which(res$V2>0.05), 15000)
+good=c(one,two)
+res=res[good,]
+
+names(res)=c("var", "V3")
+res$V1=sapply(res$var, function(x){unlist(strsplit(x,":"))[1]})
+res$V2=sapply(res$var, function(x){unlist(strsplit(x,":"))[2]})
+
+p.vals=res$V3[order(res$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+png(paste("QQplot_with_mend_genes_enrichment_",pheno,".png",sep=""))
+plot(-log10(ppoi), -log10(p.vals), xlab="Expected",ylab="Observed", pch=19, main=paste("QQ plot",pheno))
+
+### BPD
+tmp=mend[which(mend$Platform=="SMD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="blue", pch=19)
+
+### BPD
+tmp=mend[which(mend$Platform=="BPD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="violet", pch=19)
+
+
+### BMF
+tmp=mend[which(mend$Platform=="BMF"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="orange", pch=19)
+
+legend("topleft", c("SMD", "BPD", "BMF"), col=c("blue","violet","orange"), pch=19)
+
+dev.off()
+}
+
+
+## repeat blood traits with R script in parallel
+
+for((i=1; i<2; ++i))
+do
+bsub -G ukbiobank_t151 -o R_script.log -R'select[mem>10000] rusage[mem=10000]' -M10000 "R --vanilla --slave -q -f qqplot_mendelian_genes.R --args ${i}" 
+done
+
+
+
+
+

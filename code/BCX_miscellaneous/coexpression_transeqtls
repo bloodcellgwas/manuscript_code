@@ -1,0 +1,24 @@
+### co-expression and tran-eQTLs 
+DIR=
+/lustre/scratch115/projects/ukbb500k_t151/risk_score/coexpression/trans-eTQLs
+
+########### by rs id
+
+#### search among signficant trans-eQTLs 
+bsub -G team151 -o extract_vars3.log -M 1000 -R'select[mem>1000] rusage[mem=1000]' "zgrep -w -f all_condind_rsids_only.txt /nfs/team151_data02/Trans-eQTLs/trans-eQTL_significant_20181017.txt.gz > trans_eQTL_in_blood_GWAS_sign_2018_11_14.txt"
+
+#### search among signficant cis-eQTLs 
+bsub -G team151 -o extract_vars4.log -M 1000 -R'select[mem>1000] rusage[mem=1000]' "zgrep -w -f all_condind_rsids_only.txt /nfs/team151_data02/eQTL_gen/cis-eQTL_significant_20181017.txt.gz > cis_eQTL_in_blood_GWAS_sign_2018_11_14.txt"
+
+########### by variant id
+
+zcat /nfs/team151_data02/eQTL_gen/cis-eQTL_significant_20181017.txt.gz | awk '{print $0"\t"$3":"$4"_"$5"_"$6 "\t"$3":"$4"_"$6"_"$5}' > cis-eQTL_significant_20181017_with_var_ID.txt
+
+zcat /nfs/team151_data02/eQTL_gen/trans-eQTL_significant_20181017.txt.gz | awk '{print $0"\t"$3":"$4"_"$5"_"$6 "\t"$3":"$4"_"$6"_"$5}' > trans-eQTL_significant_20181017_with_var_ID.txt
+
+### extract GWAS overlap 
+bsub -G team151 -q long -o extract_vars4.log -M 6000 -R'select[mem>6000] rusage[mem=6000]' "fgrep -w -f all_condind_VAR_IDS.txt /nfs/team151_data02/Trans-eQTLs/trans-eQTL_significant_20181017_with_var_ID.txt > trans_eQTL_in_blood_GWAS_sign_2018_11_14_extracted_290419.txt"
+
+bsub -G team151 -q long -o extract_vars5.log -M 6000 -R'select[mem>6000] rusage[mem=6000]' "fgrep -w -f all_condind_VAR_IDS.txt /nfs/team151_data02/eQTL_gen/cis-eQTL_significant_20181017_with_var_ID.txt > cis_eQTL_in_blood_GWAS_sign_2018_11_14_extracted_290419.txt"
+
+
