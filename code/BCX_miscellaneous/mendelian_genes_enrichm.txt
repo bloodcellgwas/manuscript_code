@@ -1,0 +1,308 @@
+#DIR=
+/lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/clin_annot
+
+mend=read.table("ST7.txt",he=T, strings=F)
+tss=read.table("TSS.Ensemble_genes_downloaded_28_10_2019.txt", he=T, strings=F,sep="\t")
+tss=tss[!duplicated(tss$HGNC.symbol),]
+mend=merge(mend, tss, by.x="Gene_Symbol_HGNC", by.y="HGNC.symbol")
+mend$start=mend$Gene.start..bp.-100000
+mend$end=mend$Gene.end..bp.+100000
+pheno_list=scan("../results_ukbb_final/snp_lists/pheno_list.txt","char")
+
+
+for(i in c(2:29)){
+pheno=pheno_list[i]
+res=read.table(pipe(paste("awk \'{if($7>0.0005 && $7<(1-0.0005) && $8>0.4) print $2\" \"$3\" \"$16}\' ../../BOLT_analysis/output/",pheno,"_gwas_normalised_imputed_full_panel.out",sep="")), he=F, strings=F)
+ 
+set.seed(123)
+one=which(res$V3<0.05)
+two=sample(which(res$V3>0.05), 5000)
+good=c(one,two)
+res=res[good,]
+
+p.vals=res$V3[order(res$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+jpeg(paste("QQplot_with_mend_genes_enrichment_",pheno,".jpeg",sep=""))
+plot(-log10(ppoi), -log10(p.vals), xlab="Expected",ylab="Observed", pch=19, main=paste("QQ plot",pheno))
+
+### BPD
+tmp=mend[which(mend$Platform=="SMD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="blue", pch=19)
+
+### BPD
+tmp=mend[which(mend$Platform=="BPD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="violet", pch=19)
+
+
+### BMF
+tmp=mend[which(mend$Platform=="BMF"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="orange", pch=19)
+
+legend("topleft", c("SMD", "BPD", "BMF"), col=c("blue","violet","orange"), pch=19)
+
+dev.off()
+}
+
+
+# OTHER PHENOTYPES + peripeheral associations 
+DIR=
+/lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/clin_annot
+
+gwas=read.table("2019_01_14_ukbb500k_condsig.txt", he=T, strings=F, sep="\t", comment.char="")
+
+mend=read.table("ST7.txt",he=T, strings=F)
+tss=read.table("TSS.Ensemble_genes_downloaded_28_10_2019.txt", he=T, strings=F,sep="\t")
+tss=tss[!duplicated(tss$HGNC.symbol),]
+mend=merge(mend, tss, by.x="Gene_Symbol_HGNC", by.y="HGNC.symbol")
+mend$start=mend$Gene.start..bp.-100000
+mend$end=mend$Gene.end..bp.+100000
+
+gwas$mend="no"
+for(k in 1:dim(mend)[1]){
+gwas$mend[which(gwas$Chr..GRCh37.==mend$Chromosome.scaffold.name[k] & gwas$BP..GRCh37.>mend$start[k] & gwas$BP..GRCh37.<mend$end[k])]="yes"
+}
+
+periph=gwas[which(gwas$mend=="no"),c("Chr..GRCh37.", "BP..GRCh37.","Unique.Variant.ID", "rsID..where.available."),]
+periph=periph[!duplicated(periph),]
+
+filez=system("ls Other_GWAS_traits_for_Mendelian_enrichment/*tsv_pruned.txt",intern=T)
+pheno_list=sapply(filez, function(x){unlist(strsplit(x,"\\."))[1]})
+pheno_list=gsub(pheno_list, pattern="Other_GWAS_traits_for_Mendelian_enrichment/", replacement="")
+
+for(i in 1:10){
+pheno=pheno_list[i]
+res=read.table(pipe(paste("awk \'{if($3>0.0005) print $1\" \"$12}\' ",filez[i],sep="")), he=F, strings=F)
+
+if(dim(res)[2]==1)
+res=read.table(pipe(paste("awk \'{if($3>0.0005) print $1\" \"$11}\' ",filez[i],sep="")), he=F, strings=F)
+
+set.seed(123)
+res$V2=as.numeric(res$V2)
+res=res[which(!is.na(res$V2)),]
+
+#one=which(res$V2<0.05)
+#two=sample(which(res$V2>0.05), 100000)
+#three=which(res$V1 %in% gsub(periph$Unique.Variant.ID, #pattern="_", replacement=":"))
+#good=c(one,two)
+#good=unique(c(good, three))
+#res=res[good,]
+
+#res=res[-1,]
+names(res)=c("var", "V3")
+res$V1=sapply(res$var, function(x){unlist(strsplit(x,":"))[1]})
+res$V2=sapply(res$var, function(x){unlist(strsplit(x,":"))[2]})
+
+p.vals=res$V3[order(res$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+png(paste("QQplot_with_mend_genes_enrichm_and_peripheral_pruned_v4_",pheno,".png",sep=""))
+plot(-log10(ppoi), -log10(p.vals), xlab="Expected",ylab="Observed", pch=19, main=paste("QQ plot",pheno), col="grey")
+abline(0,1,lty=2)
+
+### SMD
+tmp=mend[which(mend$Platform=="SMD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="blue", pch=19)
+
+### BPD
+tmp=mend[which(mend$Platform=="BPD"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="violet", pch=19)
+
+
+### BMF
+tmp=mend[which(mend$Platform=="BMF"),]
+fin=c()
+for(j in 1:dim(tmp)[1]){
+pio=res[which(res$V1==tmp$Chromosome.scaffold.name[j] & res$V2>tmp$start[j] & res$V2<tmp$end[j]),]
+fin=rbind(fin, pio)
+}
+fin=fin[!duplicated(fin),]
+p.vals=fin$V3[order(fin$V3)]
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="orange", pch=19)
+
+#legend("topleft", c("SMD", "BPD", "BMF"), col=c("blue","violet","orange"), pch=19)
+
+
+### peripheral associations 
+filez2=system("ls Other_GWAS_traits_for_Mendelian_enrichment/*peripheral.tsv", intern=T)
+fls=filez2[i]
+fin=read.table(fls, he=F, strings=F)
+fin=fin[!duplicated(fin),]
+p=dim(fin)[2]
+p.vals=fin[,p]
+p.vals=p.vals[order(p.vals)]
+
+ppoi=ppoints(p.vals)
+ppoi=sort(qchisq(1-ppoi, 1))
+ppoi=pchisq(ppoi, 1, lower.tail=F)
+ppoi=ppoi[order(ppoi)]
+
+points(-log10(ppoi), -log10(p.vals), col="black", pch=19)
+
+legend("topleft", c("SMD", "BPD", "BMF", "Peripheral","GW"), col=c("blue","violet","orange","black","grey"), pch=19)
+
+dev.off()
+}
+
+
+## repeat blood traits with R script in parallel
+
+for((i=1; i<2; ++i))
+do
+bsub -G ukbiobank_t151 -o R_script.log -R'select[mem>10000] rusage[mem=10000]' -M10000 "R --vanilla --slave -q -f qqplot_mendelian_genes.R --args ${i}" 
+done
+
+
+
+
+# investigate enrichment of SMD and Intelligence
+# repeat above to get to the fin dataset
+# select enriched region from observing the plot
+
+j=which(-log10(p.vals)>5) 
+fin[which(fin$V3 %in% p.vals[j]),]->prova
+
+prova$gene=NA
+for(y in 1:dim(prova)[1]){
+tmp2=tmp[which(tmp$Chromosome.scaffold.name==prova$V1[y]),]
+prova$gene[y]=paste(tmp2$Gene.name[which(tmp2$start<prova$V2[y] & tmp2$end>prova$V2[y])], collapse=",")
+}
+
+unique(unlist(strsplit(prova$gene,",")))
+
+
+
+# re-calculate LD pruned snp lists with r2 < 0.2
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bgen /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/impute_${LSB_JOBINDEX}_interval.bgen --sample /lustre/scratch115/projects/interval_gwas/INTERVAL/merged1_10/QCed_imputation_PLINK_files/shapeit3_phasing/phasing/phased_chr/oxford_format_imputed/bgen_format/qctool/interval.samples --set-missing-var-ids @:#_\$1_\$2 --indep-pairwise 10000 100 0.2 --out list_vars_LD_r2_0.2_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -q long -J 'GW_LD_plink[1-22]' -o ../log_files/LD_prune_chr%I.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+# this created rs id lists
+
+DIR=
+/lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/results_HRC_imputed_version/LD_pruned_vars_lists
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/INTERVAL_chr11_ok --set-missing-var-ids @:#_\$1_\$2 --indep-pairwise 10000 100 0.2 --out list_vars_LD_r2_0.2_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -q long -J 'GW_LD_plink[11]' -o ../log_files/LD_prune_chr%I_22_06_20.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+
+echo '/nfs/team151/software/plink2_20_Dec_2017/plink --memory 29000 --bfile /lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/INTERVAL_chr2_ok --set-missing-var-ids @:#_\$1_\$2 --indep-pairwise 10000 100 0.2 --out list_vars_LD_r2_0.2_chr${LSB_JOBINDEX}' | bsub -G interval_gwas -q long -J 'GW_LD_plink[2]' -o ../log_files/LD_prune_chr%I_22_06_20.log -M 30000 -R'select[mem>30000] rusage[mem=30000]'
+
+
+DIR=
+/lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/clin_annot
+# create LD pruned lists with chr and pos
+echo 'cut -f1-3 ../../BOLT_analysis/output/baso_gwas_normalised_imputed_full_panel.out | fgrep -w -f /lustre/scratch115/projects/ukbb500k_t151/risk_score/results_HRC_imputed_version/LD_pruned_vars_lists/list_vars_LD_r2_0.2_chr${LSB_JOBINDEX}.prune.in > List_vars_LD_pruned_0.2_chr${LSB_JOBINDEX}' | bsub -G ukbb500k_t151 -J 'prune[2]' -o prune_chr%I.log -M 10000 -R'select[mem>10000] rusage[mem=10000]'
+
+for((i=1;i<23;++i))
+do
+awk '{print $2":"$3}' List_vars_LD_pruned_0.2_chr${i} > File_List_vars_LD_pruned_0.2_chr${i}
+done
+
+for((i=1;i<23;++i))
+do
+cut -f1 List_vars_LD_pruned_0.2_chr${i} > Rs_List_vars_LD_pruned_0.2_chr${i}
+done
+
+
+for((j=2;j<11;++j))
+do
+fls=$(ls *.tsv | head -${j} | tail -1)
+echo 'fgrep -f /lustre/scratch115/projects/ukbb500k_t151/risk_score/clin_annot/File_List_vars_LD_pruned_0.2_chr${LSB_JOBINDEX} '${fls}' > '${fls}'_pruned_chr${LSB_JOBINDEX}' | bsub -G ukbb500k_t151 -J 'prune[1-2]' -o prune_file%I.log -M 10000 -R'select[mem>10000] rusage[mem=10000]'
+done
+
+
+for((j=1;j<11;++j))
+do
+fls=$(ls *.tsv | head -${j} | tail -1)
+echo 'fgrep -f ../List_of_peripheral_snps.txt '${fls}' > '${fls}'_peripheral.tsv' | bsub -G ukbb500k_t151 -J 'prune[1-2]' -o prune_file%I.log -M 10000 -R'select[mem>10000] rusage[mem=10000]'
+done
+
+for((j=1;j<30;++j))
+do
+fls=$(ls /lustre/scratch115/projects/ukbb500k_t151/BOLT_analysis/output/*_imputed_full_panel.out | head -${j} | tail -1)
+echo 'fgrep -f /lustre/scratch115/projects/ukbb500k_t151/risk_score/clin_annot/Rs_List_vars_LD_pruned_0.2_chr${LSB_JOBINDEX} '${fls}' > '${fls}'_pruned_chr${LSB_JOBINDEX}' | bsub -G ukbb500k_t151 -J 'prune[22]' -o prune_file%I.log -M 10000 -R'select[mem>10000] rusage[mem=10000]'
+done
+
+
+for((j=17;j<30;++j))
+do
+fl=$(ls /lustre/scratch115/projects/ukbb500k_t151/BOLT_analysis/output/*_imputed_full_panel.out | head -${j} | tail -1)
+fls=$(echo $fl | cut -d"/" -f8)
+cat ${fls}_pruned_chr* > ${fls}_pruned.txt
+done
+
+
+for((i=2; i<30; ++i))
+do
+bsub -G ukbiobank_t151 -o R_script.log -R'select[mem>10000] rusage[mem=10000]' -M10000 "R --vanilla --slave -q -f qqplot_mendelian_genes_pruned.R --args ${i}" 
+done
+
+
+### remove intermediate chr files

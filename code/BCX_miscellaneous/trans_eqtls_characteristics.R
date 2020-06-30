@@ -48,11 +48,6 @@ hist(table(uniq$mendelian, uniq$transqtl, uniq$Most.Serious.VEP.Consequence.of.V
 table(uniq$transqtl[which(uniq$mendelian=="yes")])
 table(uniq$transqtl[which(uniq$mendelian=="no")])
 
-# trans-eQTL in Mendelian genes 48 variants (12%)
-# non trans-eQTL in Mendelian 408 variants 
-# trans-eQTL in peripheral 529, vs non trans in non mend 9738 (5.4%)
-
-
 #chisq.test(table(uniq$transqtl, uniq$mendelian))
 unique(uniq$Most.Serious.VEP.Consequence.of.Variant)->pio
 subs=uniq[which(uniq$Most.Serious.VEP.Consequence.of.Variant %in% pio[c(1,2,3,7,9,10,11)]),]
@@ -94,102 +89,8 @@ uniq$ciseqtl[which(uniq$Unique.Variant.ID %in% eqtl$condsig_var)]="yes"
 table(uniq$ciseqtl,  uniq$mendelian)
 table(uniq$transqtl[which(uniq$ciseqtl=="yes")])
 
-## target genes enrichment
-trans$mendel="no"
-trans$mendel[which(trans$GeneSymbol %in% mendelian)]="yes"
-table(trans$mendel)
-dim(trans)
-
-length(unique(trans$GeneSymbol[which(trans$mendel=="yes")]))
-# 87 out of 135! (314) mendelian genes that we detect in the GWAS
-
-length(intersect(trans$GeneSymbol[which(trans$mendel=="no")], uniq$Gene.Symbol.s..for.Most.Serious.Consequence))
-# 1132 out of 4546 genes
-
-### 
-targets=unique(trans$GeneSymbol)
-mend.gwas=intersect(unlist(strsplit(uniq$Gene.Symbol.s..for.Most.Serious.Consequence,",")), mendelian)
-intersect(targets, mendelian)->mend.targ
-geni=unique(unlist(strsplit(uniq$Gene.Symbol.s..for.Most.Serious.Consequence,",")))
-
 #### check expression levels 
 
-### dataset 1: Nath et al.  
-expr=read.table("whole_blood_gene_expression_finnish_cohort_normalised.txt", he=T, strings=F)
-
-library(RNOmni)
-expr$z=rankNorm(expr$x)
-plot(density(expr$z), ylim=c(0,0.5), main="whole blood expression")
-points(density(expr$z[which(expr$Group.1 %in% mendelian)]), type="l", col="red")
-points(density(expr$z[which(expr$Group.1 %in% geni)]), type="l", col="green")
-points(density(expr$z[which(expr$Group.1 %in% targets)]), type="l", col="blue")
-legend("topleft", c("all genes","Mendelian","GWAS","trans-eQTL\ntargets"), lty=1, col=c("black","red","green","blue"))
-
-write.table(expr, "whole_blood_gene_expression_finnish_cohort_normalised.txt", row.names = F, quote=F)
-
-expr$mendelian=NA
-expr$mendelian[which(expr$Group.1 %in% mendelian)]=expr$z[which(expr$Group.1 %in% mendelian)]
-expr$target=NA
-expr$target[which(expr$Group.1 %in% targets)]=expr$z[which(expr$Group.1 %in% targets)]
-expr$GWAS=NA
-expr$GWAS[which(expr$Group.1 %in% geni)]=expr$z[which(expr$Group.1 %in% geni)]
-#expr$mendelian=as.factor(expr$mendelian)
-head(expr)
-dim(expr)
-library(reshape2)
-library(ggplot2)
-#names(expr)
-#ggplot(expr, aes(x=Group.1, y=x))+geom_boxplot()+facet_wrap(~mendelian+target+GWAS)
-
-meltData=melt(expr[,c(1,2,4,5,6)])
-meltData=meltData[which(!is.na(meltData$value)),]
-head(meltData[which(meltData$variable=="mendelian"),])
-head(meltData)
-
-table(meltData$variable)
-ggplot(meltData, aes(x=variable, y=value))+geom_boxplot()
-
-meltData2=melt(expr[,c(1,3,4,5,6)])
-meltData2=meltData2[which(!is.na(meltData2$value)),]
-ggplot(meltData2, aes(x=variable, y=value))+geom_boxplot()
-
-expr$mend.tgt=NA
-expr[which(!is.na(expr$target) & !is.na(expr$mendelian)),"mend.tgt"]=expr$z[which(!is.na(expr$target) & !is.na(expr$mendelian))]
-expr$gwas.tgt=NA
-expr[which(!is.na(expr$target) & !is.na(expr$GWAS)),"gwas.tgt"]=expr$z[which(!is.na(expr$target) & !is.na(expr$GWAS))]
-
-meltData3=melt(expr[,c(1,3,4,5,6,7,8)])
-meltData3=meltData3[which(!is.na(meltData3$value)),]
-meltData3$variable=factor(meltData3$variable, levels=c("z","target","mendelian","GWAS","mend.tgt","gwas.tgt"))
-
-gg=ggplot(meltData3, aes(x=variable, y=value))+geom_boxplot()+
-  ylab("Normalized median gene expression")+theme_classic()+theme(axis.text=element_text(size=14),axis.title.x=element_blank(),axis.title.y=element_text(size=14),legend.position="none")
-
-gg
-
-pdf("median_expression_targets_mend_gwas_comparison.pdf", width=7, height=4)
-print(gg)
-dev.off()
-getwd()
-
-wilcox.test(expr$z[which(!is.na(expr$mend.tgt))], expr$z[which(!is.na(expr$gwas.tgt))])
-wilcox.test(expr$z[which(!is.na(expr$mendelian))], expr$z[which(!is.na(expr$GWAS))])
-
-#Wilcoxon rank sum test with continuity correction
-
-#data:  expr$z[which(!is.na(expr$mend.tgt))] and expr$z[which(!is.na(expr$gwas.tgt))]
-#W = 33310, p-value = 0.7638
-#alternative hypothesis: true location shift is not equal to 0
-
-# in the full eQTL gen:
-chisq.test(matrix(c(109,(314-109), 1504, (4546-1504)),2,2))
-
-#Pearson's Chi-squared test with Yates' continuity correction
-#data:  matrix(c(109, (314 - 109), 1504, (4546 - 1504)), 2, 2)
-#X-squared = 0.282, df = 1, p-value = 0.5954
-
-
-### dataset 2: Urmo Vosa, eQTL gen data from one cohort (BIOS)
 expr=read.table("BIOS_expression_summary_20200528.txt", he=T, strings=F)
 head(expr)
 tss=read.table("Desktop/TSS.Ensemble_genes_downloaded_28_10_2019.txt", he=T, strings=F, sep="\t")
@@ -207,45 +108,6 @@ expr$target[which(expr$HGNC.symbol %in% targets)]=expr$median_exp[which(expr$HGN
 expr$GWAS=NA
 expr$GWAS[which(expr$HGNC.symbol %in% geni)]=expr$median_exp[which(expr$HGNC.symbol %in% geni)]
 
-## however the overall gene expression is not normally distributed - rankinverse normalize
-
-library(reshape2)
-library(ggplot2)
-
-meltData=melt(expr[,c(3,10,11,12,13)])
-meltData=meltData[which(!is.na(meltData$value)),]
-head(meltData[which(meltData$variable=="mendelian"),])
-head(meltData)
-
-table(meltData$variable)
-ggplot(meltData, aes(x=variable, y=value))+geom_boxplot()
-
-#meltData2=melt(expr[,c(1,3,4,5,6)])
-#meltData2=meltData2[which(!is.na(meltData2$value)),]
-#ggplot(meltData2, aes(x=variable, y=value))+geom_boxplot()
-
-expr$mend.tgt=NA
-expr[which(!is.na(expr$target) & !is.na(expr$mendelian)),"mend.tgt"]=expr$median_exp[which(!is.na(expr$target) & !is.na(expr$mendelian))]
-expr$gwas.tgt=NA
-expr[which(!is.na(expr$target) & !is.na(expr$GWAS)),"gwas.tgt"]=expr$median_exp[which(!is.na(expr$target) & !is.na(expr$GWAS))]
-
-meltData3=melt(expr[,c(3,10,11,12,13,14,15)])
-meltData3=meltData3[which(!is.na(meltData3$value)),]
-table(meltData3$variable)
-meltData3$variable=factor(meltData3$variable, levels=c("median_exp","target","mendelian","GWAS","mend.tgt","gwas.tgt"))
-
-gg=ggplot(meltData3, aes(x=variable, y=value))+geom_boxplot()+
-  ylab("Median gene expression")+theme_classic()+theme(axis.text=element_text(size=14),axis.title.x=element_blank(),axis.title.y=element_text(size=14),legend.position="none")
-
-gg
-
-pdf("median_expression_targets_mend_gwas_comparison_BIOS_dataset.pdf", width=7, height=4)
-print(gg)
-dev.off()
-getwd()
-
-wilcox.test(expr$median_exp[which(!is.na(expr$mend.tgt))], expr$median_exp[which(!is.na(expr$gwas.tgt))])
-wilcox.test(expr$median_exp[which(!is.na(expr$mendelian))], expr$median_exp[which(!is.na(expr$GWAS))])
 
 
 # update
@@ -285,9 +147,6 @@ m.out=matchit(strat~z, data=m.in)
 m.data<-match.data(m.out)
 dim(m.data)
 
-random_uno=m.data$HGNC.symbol[which(m.data$strat==0)]
-random_due=m.data$HGNC.symbol[which(m.data$strat==0)]
-length(intersect(random_uno,random_due))
 
 ########################################################
 trans$z=NA
@@ -353,13 +212,4 @@ table(m.data$mendel)
 m.data$gwas=0
 m.data$gwas[which(m.data$GeneSymbol %in% gwas)]=1
 
-
-B=data.frame(table(m.data$GeneSymbol))
-head(A)
-dim(A)
-B$gwas="no"
-B$gwas[which(B$Var1 %in% gwas)]="yes"
-aggregate(B$Freq, list(B$gwas), summary)
-### this datset is calibrated for mendelian genes but not for gwas
-subs=trans[which(trans$GeneSymbol %in% mendelian | trans$GeneSymbol %in% gwas),]
 

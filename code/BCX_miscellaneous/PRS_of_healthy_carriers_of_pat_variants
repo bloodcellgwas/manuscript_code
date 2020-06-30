@@ -1,0 +1,270 @@
+## known variant pathogenic annotation 
+# carriers and their PRS 
+
+# start with checking for D508 what happens among TMPRSS6 carriers and their PRS
+
+# dir=
+/lustre/scratch115/realdata/mdt3/projects/ukbb500k_t151/risk_score/clin_annot
+
+vars=scan("known_pathogenic_variants_list.txt","char")
+phen=read.table("../../blood_counts/tech_adj_only.tsv", he=T, strings=F)
+vars=vars[-16]
+phen_adj=read.table("../../BOLT_analysis/reference/ukbb_500k_final_newsex.sample", he=T, strings=F)
+phen_adj=phen_adj[-1,]
+homs=c(0,1,1,1,1,1,1,1,1,0,0,1,0,0,1)
+inh=c(rep("R",3), rep("D",2),rep("R",10))
+dcods=c(rep("D552",3), rep("D728",2), rep("E831",3), "D709","D610","D561","D588","D508","D691","D750")
+dis=read.table("/lustre/scratch115/projects/ukbb500k_t151/rotation_project/data/inputs_and_outputs/190321_ukbb_blood_disorders_ID_and_ICD_code.txt", he=T, strings=F)
+link=read.table("/lustre/scratch115/projects/ukbb500k_t151/rotation_project/data/raw/13745_7439conv.tsv", he=T, strings=F)
+dis$other_id=link$f.eid_7439[match(dis$eid, link$f.eid_13745)]
+pheno=scan("../results_ukbb_final/snp_lists/pheno_list.txt","char")
+pcs=read.csv(pipe("cut -d\",\" -f1,3,11-21 /lustre/scratch115/projects/ukbb500k_t151/ukbb_data/ukb_sampleQC.csv"), he=T, strings=F)
+names(pcs)=c("eid","sex","PC1","PC2","PC3","PC4","PC5","PC6","PC7","PC8","PC9","PC10","PC11")
+age=read.table(pipe("cut -f1,3 /lustre/scratch115/projects/ukbb500k_t151/blood_counts/tech_adj_only.tsv"), he=T, strings=F)
+
+fin=data.frame(pheno=pheno, inh=rep(inh,each=29), var=rep(vars,each=29), Nhoms=NA , Nhoms_cases=NA, Nhets=NA , Nhets_cases=NA,N_outliers=NA, OR_het_vs_WT=NA , CI_L=NA ,CI_U=NA,P=NA,OR_healthy_het_PRS=NA,CI_L2=NA,CI_U2=NA,P2=NA )
+
+for(ph in pheno){
+## prepare dataset 
+sc=read.table(paste("../UKBB_all_risk_score/",ph,"_ukbb_condind_common_rs_adjusted.profile",sep=""), he=T, strings=F)
+names(sc)[dim(sc)[2]]="TOT"
+sc$TOT_norm=(sc$TOT-mean(sc$TOT))/sd(sc$TOT)
+mer=merge(sc, link, by.x="IID", by.y="f.eid_7439", all.x=T)
+names(mer)[dim(mer)[2]]="eid"
+mer=merge(mer, dis, by="eid", all.x=T)
+mer=mer[,c("IID", "TOT_norm","eid","extract")]
+mer=merge(mer, pcs, by="eid", all.x=T)
+mer=merge(mer, phen[,c("subject_id", paste(ph,"_tech_adj",sep=""))], by.x="eid", by.y="subject_id",all.x=T)
+mer=merge(mer, phen_adj[,c("IID", paste(ph,"_gwas_normalised",sep=""))], by="IID", all.x=T)
+mer=merge(mer, age, by.x="eid", by.y="subject_id",all.x=T)
+
+for(i in 1){
+## add variant genotypes
+v=vars[i]
+
+#read hom and het carriers id codes - Note! some variants are missing because they are rare
+
+
+##HFE and MPO here
+#homs=scan(pipe(paste("fgrep -w ",v," HFE/plink_HFE_chr6_homs.rlist | grep HOM",sep="")), "char", quiet=T)
+#homs=homs[5:length(homs)]
+#homs=unique(homs)
+#hets=scan(pipe(paste("fgrep -w ",v," HFE/plink_HFE_chr6_homs.rlist | grep HET",sep="")), "char", quiet=T)
+#hets=hets[5:length(hets)]
+#hets=unique(hets)
+
+homs=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files/plink_chr*_homs.rlist | grep HOM",sep="")), "char", quiet=T)
+if(length(homs)==0)
+homs=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files_2/*.rlist | grep HOM",sep="")),"char", quiet=T)
+homs=homs[5:length(homs)]
+homs=unique(homs)
+hets=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files/plink_chr*_homs.rlist | grep HET",sep="")), "char", quiet=T)
+if(length(hets)==0)
+hets=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files_2/*.rlist | grep HET",sep="")), "char", quiet=T)
+hets=hets[5:length(hets)]
+hets=unique(hets)
+if(length(hets)<5)
+next
+
+mer$var="WT"
+mer$var[which(mer$IID %in% hets)]="het"
+mer$var[which(mer$IID %in% homs)]="hom"
+
+fin$Nhoms[which(fin$pheno==ph & fin$var==v)]=length(homs[which(!is.na(homs))])
+fin$Nhets[which(fin$pheno==ph & fin$var==v)]=length(hets[which(!is.na(hets))])
+
+if(inh[i]=="R"){
+fin$Nhoms_cases[which(fin$pheno==ph & fin$var==v)]=length(grep(dcods[i],mer$extract[which(mer$var=="hom")]))
+SD=sd(na.omit(mer$TOT_norm))
+fin$N_outliers[which(fin$pheno==ph & fin$var==v)]=length(which(mer$TOT_norm[which(mer$var=="hom")]<(-2*SD) | mer$TOT_norm[which(mer$var=="hom")]>2*SD))
+}
+
+if(inh[i]=="D"){
+mer$var[which(mer$var=="hom")]="het"
+fin$Nhets_cases[which(fin$pheno==ph & fin$var==v)]=length(grep(dcods[i],mer$extract[which(mer$var=="het")]))
+SD=sd(na.omit(mer$TOT_norm))
+fin$N_outliers[which(fin$pheno==ph & fin$var==v)]=length(which(mer$TOT_norm[which(mer$var=="het")]<(-2*SD) | mer$TOT_norm[which(mer$var=="het")]>2*SD))
+}
+
+# model1 test if hets are more at risk for disease
+# this model is: "Dcode yes/no ~ het/wt + sex + age + PCs + any_other_diseases"
+
+if(length(hets)>10){
+mer$var1=NA
+mer$var1[which(mer$var=="WT")]=0
+mer$var1[which(mer$var=="het")]=1
+mer$test=NA
+mer$test[grep(dcods[i], mer$extract)]=1
+mer$test[sample(which(is.na(mer$test)), 10000)]=0
+B=data.frame(table(mer$test))
+
+if(dim(B)[1]>1 & min(B$Freq)>5){
+B0=data.frame(table(unlist(strsplit(mer$extract[which(mer$test==0)],","))))
+B1=data.frame(table(unlist(strsplit(mer$extract[which(mer$test==1)],","))))
+conf0=as.character(B0[which(B0$Freq>length(which(mer$test==0))/10),"Var1"])
+conf1=as.character(B1[which(B1$Freq>length(which(mer$test==1))/10),"Var1"])
+conf=unique(c(conf0, conf1))
+conf=conf[which(conf!=dcods[i])]
+if(length(conf)>0){
+for(j in 1:length(conf)){
+mer[,paste("cov",j,sep="")]=0
+mer[grep(conf[j], mer$extract),paste("cov",j,sep="")]=1
+}}
+form=paste("mer$test~mer$var1+mer$sex+mer$age_acq+mer$PC1+mer$PC2+mer$PC3+mer$PC4+mer$PC5+mer$PC6+mer$PC7+mer$PC8+mer$PC9+mer$PC10",paste("factor(mer$cov",c(1:length(conf)),")",sep="",collapse="+"),sep="+")
+
+if(length(conf)==0)
+form="mer$test~mer$var1+mer$sex+mer$age_acq+mer$PC1+mer$PC2+mer$PC3+mer$PC4+mer$PC5+mer$PC6+mer$PC7+mer$PC8+mer$PC9+mer$PC10"
+
+mod=glm(as.formula(form), family="binomial")
+### re-start from here
+p_val=summary(mod)$coefficients[2,4]
+if(!is.na(p_val) & p_val<0.05){
+exp(cbind(coef(mod), confint(mod)))->pippo
+fin[which(fin$pheno==ph & fin$var==v),c("OR_het_vs_WT", "CI_L" ,"CI_U")]=pippo[2,]
+fin[which(fin$pheno==ph & fin$var==v),"P"]=p_val
+}
+}
+
+# model2 test if healthy carriers have a protective PRS
+# this model is: "het/wt[given all are healthy] ~ PRS + sex + age + PCs" (there are no other diseases by definition)
+# attention this should have really been homs not hets - repeat below 
+
+mer$var1=NA
+mer$var1[sample(which(mer$var=="WT" & is.na(mer$extract)),10000)]=0
+mer$var1[which(mer$var=="het" & is.na(mer$extract))]=1
+
+form=paste("mer$var1~mer$TOT_norm+mer$sex+mer$age_acq+mer$PC1+mer$PC2+mer$PC3+mer$PC4+mer$PC5+mer$PC6+mer$PC7+mer$PC8+mer$PC9+mer$PC10",sep="+")
+
+mod2=glm(as.formula(form), family="binomial")
+p_val2=summary(mod2)$coefficients[2,4]
+if(!is.na(p_val2) & p_val2<0.05){
+exp(cbind(coef(mod2), confint(mod2)))->pippodi
+fin[which(fin$pheno==ph & fin$var==v),c("OR_healthy_het_PRS", "CI_L2" ,"CI_U2")]=pippodi[2,]
+fin[which(fin$pheno==ph & fin$var==v),"P2"]=p_val2
+}
+}
+}
+}
+
+
+
+
+
+############################
+############################
+############################
+
+
+
+# re-test the hom carriers for compensating PRSs
+# for the 2 variants with enough hom carriers (PIEZO1 and JAK2)
+
+for(ph in pheno){
+## prepare dataset 
+sc=read.table(paste("../UKBB_all_risk_score/",ph,"_ukbb_condind_common_rs_adjusted.profile",sep=""), he=T, strings=F)
+names(sc)[dim(sc)[2]]="TOT"
+sc$TOT_norm=(sc$TOT-mean(sc$TOT))/sd(sc$TOT)
+mer=merge(sc, link, by.x="IID", by.y="f.eid_7439", all.x=T)
+names(mer)[dim(mer)[2]]="eid"
+mer=merge(mer, dis, by="eid", all.x=T)
+mer=mer[,c("IID", "TOT_norm","eid","extract")]
+mer=merge(mer, pcs, by="eid", all.x=T)
+mer=merge(mer, phen[,c("subject_id", paste(ph,"_tech_adj",sep=""))], by.x="eid", by.y="subject_id",all.x=T)
+mer=merge(mer, phen_adj[,c("IID", paste(ph,"_gwas_normalised",sep=""))], by="IID", all.x=T)
+mer=merge(mer, age, by.x="eid", by.y="subject_id",all.x=T)
+
+for(i in c(12,15)){
+## add variant genotypes
+v=vars[i]
+
+#read home and het carriers id codes - Note! some variants are missing because they are rare...check
+
+homs=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files/plink_chr*_homs.rlist | grep HOM",sep="")), "char", quiet=T)
+if(length(homs)==0)
+homs=scan(pipe(paste("fgrep -w -m1 ",v," ../../rotation_project/PLINK_files_2/plink_chr*_homs.rlist | grep HOM",sep="")),"char", quiet=T)
+homs=homs[5:length(homs)]
+homs=unique(homs)
+hets=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files/plink_chr*_homs.rlist | grep HET",sep="")), "char", quiet=T)
+if(length(hets)==0)
+hets=scan(pipe(paste("fgrep -w ",v," ../../rotation_project/PLINK_files_2/plink_chr*_homs.rlist | grep HET",sep="")), "char", quiet=T)
+hets=hets[5:length(hets)]
+hets=unique(hets)
+if(length(hets)<5)
+next
+
+mer$var="WT"
+mer$var[which(mer$IID %in% hets)]="het"
+mer$var[which(mer$IID %in% homs)]="hom"
+
+# model2 test if healthy homs have a protective PRS
+# this model is: "hom/wt[given all are healthy] ~ PRS + sex + age + PCs" (there are no other diseases by definition)
+
+mer$var1=NA
+mer$var1[sample(which(mer$var=="WT" & is.na(mer$extract)),1000)]=0
+mer$var1[which(mer$var=="hom" & is.na(mer$extract))]=1
+
+form=paste("mer$var1~mer$TOT_norm+mer$sex+mer$age_acq+mer$PC1+mer$PC2+mer$PC3+mer$PC4+mer$PC5+mer$PC6+mer$PC7+mer$PC8+mer$PC9+mer$PC10",sep="+")
+
+mod2=glm(as.formula(form), family="binomial")
+p_val2=summary(mod2)$coefficients[2,4]
+if(!is.na(p_val2) & p_val2<0.05){
+exp(cbind(coef(mod2), confint(mod2)))->pippodi
+print(v)
+print(ph)
+print(pippodi)
+print(p_val2)
+}
+}
+}
+
+
+
+### plot some examples
+
+# GP9 and platelets
+
+mean -2sd = 22.02284
+
+pdf("GP9_rs5030764_carriers_3.pdf", width=5,height=5)
+print(plot(density(na.omit(mer$plt_tech_adj[which(mer$var=="WT" & mer$TOT.y<22.02284)])), col="green",xlim=c(0,500)))
+print(points(density(na.omit(mer$plt_tech_adj[which(mer$var=="WT" & mer$TOT.y>22.02284)])), col="black",type="l" ))
+print(points(density(na.omit(mer$plt_tech_adj[which(mer$var=="het" & mer$TOT.y>22.02284)])), col="orange", type="l"))
+print(points(density(na.omit(mer$plt_tech_adj[which(mer$var=="het" & mer$TOT.y<22.02284)])), col="red", type="l"))
+abline(v=150)
+dev.off()
+
+pdf("GP9_rs5030764_carriers_GTS_plt.pdf", width=5,height=5)
+print(plot(density(na.omit(mer$TOT[which(mer$var=="WT" & mer$TOT>2*sd(mer$TOT))])), col="black"))
+print(points(density(na.omit(mer$TOT[which(mer$var=="het")])), col="green", type="l"))
+print(points(density(na.omit(mer$TOT[which(mer$TOT<2*sd(mer$TOT)))])), col="red", type="l"))
+dev.off()
+
+
+mer$test=0
+mer$test[which(mer$plt_tech_adj<150)]=1
+
+form=paste("mer$test~mer$var+mer$sex+mer$age_acq+mer$PC1+mer$PC2+mer$PC3+mer$PC4+mer$PC5+mer$PC6+mer$PC7+mer$PC8+mer$PC9+mer$PC10",sep="+")
+
+
+
+### quintile plots ###
+
+mer$GTS_quant=cut(mer$TOT_norm, breaks=c(-4.8,quantile(mer$TOT_norm, c(0.2,0.4,0.6,0.8,1))))
+
+# make a summary table here 
+mer$under="no"
+mer$under[which(mer$plt_tech_adj<150)]="yes"
+fin=as.data.frame(table(mer$under[which(mer$var=="het")], mer$GTS_quant[which(mer$var=="het")]))
+names(fin)=c("under_150", "quintile", "N")
+write.table(fin, "GP9_rs5030764_HET_prop_under_150_plt_count.txt", row.names=F, quote=F)
+
+fin=as.data.frame(table(mer$under[which(mer$var=="WT")], mer$GTS_quant[which(mer$var=="WT")]))
+names(fin)=c("under_150", "quintile", "N")
+write.table(fin, "GP9_rs5030764_WT_prop_under_150_plt_count.txt", row.names=F, quote=F)
+
+
+gg<-ggplot(mer, aes(x=plt_tech_adj, group=GTS_quant))+
+geom_density()+scale_x_continuous(limits=c(0,500))+facet_wrap(~var, nrow=2)+geom_vline(xintercept=150)
+
+gg<-ggplot(mer, aes(x=GTS_quant, y=below, fill=var))+geom_bar(stat="count", position="dodge")
+
