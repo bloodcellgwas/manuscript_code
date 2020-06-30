@@ -1,0 +1,15 @@
+#!/bin/bash
+export OUT_DIR=/rds/project/who1000-1/rds-who1000-cbrc/projects/gwas_bcx_ukbb500k/conditional_analysis_4
+export SUPPORT_FILES=${OUT_DIR}/support_files
+export PHENO_NAMES=${OUT_DIR}/pheno_names.tsv
+export BOLT_OUT_DIR=/rds/project/who1000-1/rds-who1000-cbrc/user/wja24/shared/blood_cell_traits_2018/BOLT_output
+export LSB_DEFAULTGROUP=ukbiobank_t151
+export MAPPING_FILE_ORIG=${OUT_DIR}/tables/mapping_file_all.csv
+export MAPPING_FILE=${MAPPING_FILE_ORIG}
+export MAPPING_FILE_RSID=${OUT_DIR}/tables/mapping_file_rsid.csv
+export IMPUTE_BGEN_FOLDER=/rds/project/wja24/rds-wja24-uk-biobank-gen/bgen
+export SAMPLE_FILE=${OUT_DIR}/ukb743_imp_chr1_v2_s487398.sample 
+export PHENO_FILE=${OUT_DIR}/ukbb_500k_final_newsex.sample
+export LOG_DIR=/home/pa354/2018_10_11_ukbb500k_2/output
+export SCRIPT_DIR=/home/pa354/2018_10_11_ukbb500k_2
+export DISEASE_NAMES=${OUT_DIR}/external_data/all_diseases_analyse.tsv
